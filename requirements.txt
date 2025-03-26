@@ -4,3 +4,7 @@ streamlit
 requests
 dotenv
 diagrams
+selenium
+boto3
+webdriver-manager
+mistralai

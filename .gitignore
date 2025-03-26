@@ -176,3 +176,5 @@ cython_debug/
 # Janvi
 test.py
 myenv
+s3_test.py
+mistral_test.py
