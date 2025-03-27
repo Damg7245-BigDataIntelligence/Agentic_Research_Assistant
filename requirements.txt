@@ -8,3 +8,6 @@ selenium
 boto3
 webdriver-manager
 mistralai
+google-generativeai
+pinecone[grpc]
+sentence_transformers

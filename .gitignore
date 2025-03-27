@@ -174,7 +174,5 @@ cython_debug/
 .pypirc
 
 # Janvi
-test.py
 myenv
-s3_test.py
-mistral_test.py
+test/

@@ -43,23 +43,23 @@ def upload_file_to_s3(file_content, filname, folder=None):
         print(f"Error uploading binary content: {e}")
         return False
     
-def upload_pdf_to_s3(file_content: bytes, original_filename: str, document_id: str) -> str:
-    """
-    Uploads PDF to S3.
-    Returns URL for the uploaded file.
-    """
-    try:
-        # Upload original PDF
-        pdf_key = f"documents/pdf/{document_id}/{original_filename}"
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=pdf_key,
-            Body=file_content,
-            ContentType='application/pdf'
-        )
-        return f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{pdf_key}"
-    except Exception as e:
-        raise Exception(f"Failed to upload PDF to S3: {e}")
+# def upload_pdf_to_s3(file_content: bytes, original_filename: str, document_id: str) -> str:
+#     """
+#     Uploads PDF to S3.
+#     Returns URL for the uploaded file.
+#     """
+#     try:
+#         # Upload original PDF
+#         pdf_key = f"documents/pdf/{document_id}/{original_filename}"
+#         s3_client.put_object(
+#             Bucket=bucket_name,
+#             Key=pdf_key,
+#             Body=file_content,
+#             ContentType='application/pdf'
+#         )
+#         return f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{pdf_key}"
+#     except Exception as e:
+#         raise Exception(f"Failed to upload PDF to S3: {e}")
 
 def fetch_s3_urls(base_path):
     """
