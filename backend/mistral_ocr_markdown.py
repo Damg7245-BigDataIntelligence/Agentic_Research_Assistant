@@ -1,7 +1,6 @@
 import os
 from mistralai import Mistral
 from dotenv import load_dotenv
-from s3_utils import get_presigned_url, upload_to_s3
 
 # Load environment variables from .env file
 load_dotenv()

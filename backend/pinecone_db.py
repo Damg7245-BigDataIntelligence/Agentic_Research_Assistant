@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 import google.generativeai as genai
-from markdown_chunking import chunk_markdown_by_headers
+from backend.markdown_chunking import chunk_markdown_by_headers
 import requests
 from urllib.parse import urlparse
 
@@ -132,16 +132,19 @@ class AgenticResearchAssistant:
             logging.info(f"Inserted {len(pinecone_data)} chunks into Pinecone successfully.")
         except Exception as e:
             logging.error(f"Error processing presigned URL: {e}")
-
-    def search_pinecone(self, query, year, quarter, top_k=7):
-        """Search for relevant chunks in Pinecone, filtering by year and quarter, and generate a response using Gemini."""
+        
+    def search_pinecone_db(self, query, year_quarter_dict, top_k=20):
+        """Search for relevant chunks in Pinecone, filtering by multiple years and quarters, and generate a response using Gemini."""
         query_embedding = self.model.encode([query]).tolist()
         try:
-            # Define metadata filter to ensure only relevant vectors are retrieved
+            # Construct metadata filter for multiple years and quarters
             filter_criteria = {
-                "year": {"$eq": str(year)},
-                "quarter": {"$eq": str(quarter)}
+                "$or": [
+                    {"year": {"$eq": str(year)}, "quarter": {"$in": [str(q) for q in quarters]}}
+                    for year, quarters in year_quarter_dict.items()
+                ]
             }
+            print(filter_criteria)
 
             # Perform a filtered search in Pinecone
             results = self.index.query(
@@ -153,15 +156,21 @@ class AgenticResearchAssistant:
 
             matches = results.get("matches", [])
             if not matches:
-                logging.warning(f"No relevant matches found for Year: {year}, Quarter: {quarter}.")
-                return "No relevant information found for the specified year and quarter."
+                logging.warning(f"No relevant matches found for the given year-quarter combinations.")
+                return "No relevant information found for the specified year and quarters."
 
-            # Extract matched texts
-            retrieved_texts = [match["metadata"]["text"] for match in matches]
-
+            # Extract matched texts along with their metadata
+            retrieved_data = [(match["metadata"]["text"], match["metadata"]["year"], match["metadata"]["quarter"]) for match in matches]
+            # print(retrieved_data)
+            
             # Create context for Gemini
-            context = "\n".join(retrieved_texts)
-            prompt = f"Use the following context to answer the question:\n\n{context}\n\nQuestion: {query}"
+            context = "\n".join([f"Year: {year}, Quarter: {quarter} - {text}" for text, year, quarter in retrieved_data])
+            prompt = f"""You are an AI assistant tasked with analyzing Nvidia's financial data. 
+                    Below is relevant financial information retrieved from a vector database, with each entry associated with a specific year and quarter. 
+                    Use this context to answer the question accurately.
+                    Question: {query}
+                    Context: {context}
+                    """
 
             # Generate response using Gemini
             response = self.gemini_model.generate_content(prompt)
@@ -169,4 +178,4 @@ class AgenticResearchAssistant:
         except Exception as e:
             logging.error(f"Error during search: {e}")
             return "Error occurred during search."
-
+        
