@@ -5,9 +5,9 @@ This project implements an integrated research assistant that leverages three sp
 ---
 
 ## **📌 Project Resources**
-- **Streamlit:** [Application Link](http://34.21.56.116:8501)
+- **Streamlit:** [Application Link](http://34.85.173.233:8501/)
 - **Airflow Dashboard:** [Airflow Link](http://34.21.56.116:8080)
-- **Backend:** [Backend Link](http://34.21.56.116:8000)
+- **Backend:** [Backend Link](http://34.85.173.233:8000/)
 - **Demo Video:** [YouTube Demo](https://youtu.be/7x4iwCADyJA)
 - **Documentation:** [Codelab/Documentation Link](https://codelabs-preview.appspot.com/?file_id=1xFumshJM3UlPdMnpQ0lPdu22o8shux50UXjRI8qIng4#1)
 
@@ -28,7 +28,7 @@ This project implements an integrated research assistant that leverages three sp
 
 ## **📌 Architecture Diagram**
 <p align="center">
-  <img src="https://your_link/architecture_diagram.jpg" alt="Architecture Diagram" width="600">
+  <img src="https://github.com/Damg7245-BigDataIntelligence/Agentic_Research_Assistant/blob/main/Diagram/MultiAgent_AI_Nvidia_LangGraph.png" alt="Architecture Diagram" width="600">
 </p>
 
 ---
