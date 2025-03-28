@@ -76,21 +76,21 @@ def chunk_markdown_by_headers(markdown_text, ideal_word_count=500):
     
     return chunks
 
-# --- Main Section ---
-if __name__ == "__main__":
-    file_path = "/Users/janvichitroda/Documents/Janvi/NEU/Big_Data_Intelligence_Analytics/Assignment 5/Part 1/Github_Repo/Agentic_Research_Assistant/input/2022_Fourth_Quarter.md"
+# # --- Main Section ---
+# if __name__ == "__main__":
+#     file_path = "/Users/janvichitroda/Documents/Janvi/NEU/Big_Data_Intelligence_Analytics/Assignment 5/Part 1/Github_Repo/Agentic_Research_Assistant/input/2022_Fourth_Quarter.md"
     
-    # Read the file content
-    with open(file_path, "r", encoding="utf-8") as f:
-        sample_markdown = f.read()
+#     # Read the file content
+#     with open(file_path, "r", encoding="utf-8") as f:
+#         sample_markdown = f.read()
     
-    # Get chunks from the markdown content
-    chunks = chunk_markdown_by_headers(sample_markdown)
+#     # Get chunks from the markdown content
+#     chunks = chunk_markdown_by_headers(sample_markdown)
 
-    output_file = "/Users/janvichitroda/Documents/Janvi/NEU/Big_Data_Intelligence_Analytics/Assignment 5/Part 1/Github_Repo/Agentic_Research_Assistant/input/output_chunks.json"
+#     output_file = "/Users/janvichitroda/Documents/Janvi/NEU/Big_Data_Intelligence_Analytics/Assignment 5/Part 1/Github_Repo/Agentic_Research_Assistant/input/output_chunks.json"
 
-    # Write the chunks list to the JSON file
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(chunks, f, ensure_ascii=False, indent=4)
+#     # Write the chunks list to the JSON file
+#     with open(output_file, "w", encoding="utf-8") as f:
+#         json.dump(chunks, f, ensure_ascii=False, indent=4)
 
-    print(f"Chunks successfully saved to {output_file}")
+#     print(f"Chunks successfully saved to {output_file}")

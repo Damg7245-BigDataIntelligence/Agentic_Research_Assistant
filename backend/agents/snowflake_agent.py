@@ -1,126 +1,87 @@
-import yfinance as yf
-from dotenv import load_dotenv
-from pathlib import Path
-from .. import s3_utils
-import numpy as np
-import io
 import snowflake.connector
-load_dotenv()
+from dotenv import load_dotenv
+import google.generativeai as genai
 import os
+import re
+import pandas as pd
+import matplotlib.pyplot as plt
 
-def create_daily_historical_report(ticker="NVDA", period="5y", output_file=None):
-    """
-    Create a report with daily historical data and technical indicators
-    """
-    print(f"🔍 Fetching daily historical data for {ticker} over {period}...")
+# Load environment variables
+dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", ".env"))
+load_dotenv(dotenv_path)
+
+def fetch_snowflake_response(query, year_quarter_dict):
+
+    GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
+
+    prompt = f"""
+
+    I have a table in Snowflake that contains financial data for NVidia. This table records information for each day with different columns that represent various financial metrics.
     
-    # Create output directory if it doesn't exist
-    output_dir = Path("data")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    **Input Table: NVIDIA_FIN_DATA**  
+    Below is a brief description of each column:
+    - `DATE TIMESTAMP_NTZ`: The timestamp of the financial record, indicating the specific day.
+    - `OPEN FLOAT`: The opening price of the stock on that day.
+    - `DAILYCHANGE FLOAT`: The absolute change in the stock price compared to the previous day.
+    - `MA10 FLOAT`: The 10-day moving average of the stock's price.
+    - `HIGH FLOAT`: The highest stock price recorded on that day.
+    - `CLOSE FLOAT`: The closing price of the stock on that day.
+    - `RSI FLOAT`: The Relative Strength Index, a technical indicator that measures the speed and change of price movements (used for determining overbought/oversold conditions).
+    - `VOLUME NUMBER`: The number of shares traded on that day.
+    - `DAILYCHANGEPERCENT FLOAT`: The percentage change in the stock's price compared to the previous day.
+    - `TICKER TEXT`: The stock symbol or identifier for the stock being traded.
+    - `DOLLARVOLUME FLOAT`: The total dollar volume of stocks traded (calculated as the stock price multiplied by the trading volume).
+    - `LOW FLOAT`: The lowest stock price recorded on that day.
+    - `MA30 FLOAT`: The 30-day moving average of the stock's price.
+    - `VOLATILITY20D FLOAT`: The 20-day volatility of the stock's price, indicating how much the price fluctuates over the past 20 days.
+    - `Year INT`: The year of the financial record.
+    - `Quarter INT`: The quarter of the financial record.
+
+    **Important Notes for Gemini:**
+    - Identify the relevant columns from the provided metadata based on the user's query.
+    - Generate the appropriate SQL query that will fetch the relevant data to answer the user’s query.
+    - Make sure to consider: The specific financial metric(s) being asked (e.g., revenue, net income)
+    - I have already added `Year` and `Quarter` as separate columns in the table.  
+    - The filtering should be done **directly** using these columns, **without** needing to extract them from the `DATE` column.  
+    - The user will provide a dictionary containing `Year` and `Quarter`, which should be used for filtering.  
+    - Your main task is to generate the required SQL queries based on the user’s request and correctly identify the relevant column(s).
+
+    **User Query:**  
+    {query}
+
+    **Time Duration:**  
+    The user will specify the time frame using a dictionary containing `Year` and `Quarter`.  
+    Example: `{year_quarter_dict}`
+
+    **Task for Gemini:**  
+    Based on the user's query, generate **two separate SQL queries**:
+
+    ### **1. Aggregated Query (Summing financial metrics like DOLLARVOLUME)**
+    - This query should aggregate the specified metric (e.g., `SUM(DOLLARVOLUME)`) over the relevant time periods (specific quarters or years).
+    - Use the `Year` and `Quarter` columns for filtering.
+
+    ### **2. Raw Data Query (Without Aggregation)**
+    - This query should retrieve individual record/records (financial metrics that is relevant to the user query, e.g., `(DOLLARVOLUME)`) along with date, year, quater without aggregation.
+    - It should filter based on `Year` and `Quarter`.
+
+    **Format of Response:**
+    1. **Query 1: Aggregated Query**, followed by the SQL code.
+    2. **Query 2: Raw Data Query**, followed by the SQL code.
     
-    if not output_file:
-        output_file = output_dir / f"{ticker}_daily_historical.csv"
-    
-    try:
-        # Get ticker object
-        ticker_obj = yf.Ticker(ticker)
-        
-        # Get detailed historical data with all available columns
-        hist_data = ticker_obj.history(period=period, auto_adjust=True)
-        
-        # Reset index to make Date a column
-        df = hist_data.reset_index()
-        
-        # Add ticker column as the first column
-        df.insert(0, 'Ticker', ticker)
-        
-        # Some additional calculated columns that change daily
-        if 'Close' in df.columns and 'Open' in df.columns:
-            df['DailyChange'] = df['Close'] - df['Open']
-            df['DailyChangePercent'] = (df['Close'] / df['Open'] - 1) * 100
-        
-        if 'Volume' in df.columns and 'Close' in df.columns:
-            df['DollarVolume'] = df['Volume'] * df['Close']
-        
-        # Calculate 10-day and 30-day moving averages
-        # Handle NaN values for initial periods by filling with the value itself
-        if 'Close' in df.columns:
-            df['MA10'] = df['Close'].rolling(window=10, min_periods=1).mean()
-            df['MA30'] = df['Close'].rolling(window=30, min_periods=1).mean()
-        
-        # Calculate volatility (standard deviation of returns over 20 days)
-        if 'Close' in df.columns:
-            # Calculate returns first
-            df['Returns'] = df['Close'].pct_change()
-            
-            # Handle initial NaN value in Returns
-            df['Returns'] = df['Returns'].fillna(0)
-            
-            # Calculate volatility with min_periods=1 to handle initial values
-            df['Volatility20D'] = df['Returns'].rolling(window=20, min_periods=1).std() * (252 ** 0.5)
-        
-        # Calculate Relative Strength Index (RSI)
-        if 'Close' in df.columns:
-            delta = df['Close'].diff()
-            # Handle initial NaN value
-            delta = delta.fillna(0)
-            
-            up = delta.clip(lower=0)
-            down = -1 * delta.clip(upper=0)
-            
-            # Instead of ewm which produces initial NaNs, use rolling with expanding
-            # for the initial periods
-            up_mean = up.rolling(window=14, min_periods=1).mean()
-            down_mean = down.rolling(window=14, min_periods=1).mean()
-            
-            # Avoid division by zero
-            down_mean = down_mean.replace(0, np.finfo(float).eps)
-            
-            rs = up_mean / down_mean
-            df['RSI'] = 100 - (100 / (1 + rs))
-        
-        # Remove intermediate calculation columns
-        if 'Returns' in df.columns:
-            df = df.drop('Returns', axis=1)
-        
-        # Remove Dividends and Stock Splits columns if they exist
-        if 'Dividends' in df.columns:
-            df = df.drop('Dividends', axis=1)
-        
-        if 'Stock Splits' in df.columns:
-            df = df.drop('Stock Splits', axis=1)
-        
-        # Save to CSV
-        df.to_csv(output_file, index=False)
-        
-        # Summary
-        print(f"✅ Created daily historical report for {ticker} with {len(df)} rows and {len(df.columns)} columns")
-        print(f"📊 Report saved to: {output_file}")
-        print(f"📈 Date range: {df['Date'].min()} to {df['Date'].max()}")
-        
-        return df
-        
-    except Exception as e:
-        print(f"❌ Error creating report: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None
+    - Ensure proper formatting and structuring of the queries.
+    - The explanation should follow after the SQL code, not between the queries.
 
-def upload_csv_to_s3(df):
-    # Convert DataFrame to CSV in memory (without index)
-    output_buffer = io.StringIO()
-    df.to_csv(output_buffer, index=False)
-    output_buffer.seek(0)  # Go to the beginning of the StringIO object
+"""
+    genai.configure(api_key=GOOGLE_API_KEY)
+    gemini_model = genai.GenerativeModel("gemini-1.5-pro-latest")
+    response = gemini_model.generate_content(prompt)
+    # Call Gemini API (example, your logic here might differ)
+    #print(response.text)
 
-    # Generate the filename with timestamp
-    filename = f"nvidia_data.csv"
+    return response.text.strip()
 
-    # Upload the CSV to S3
-    s3_utils.upload_file_to_s3(output_buffer.getvalue(), filename, "csvFile")
 
-    print("File uploaded to s3")
-
-def snowflake_connector():
+def fetch_snowflake_df(query):
     # Snowflake connection details
     SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")  # e.g. 'vwcoqxf-qtb83828'
     SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER")  # Your Snowflake username
@@ -136,106 +97,78 @@ def snowflake_connector():
     )
 
     cur = conn.cursor()
-    
-    # Create Warehouse (if it doesn't exist)
-    cur.execute("""
-        CREATE WAREHOUSE IF NOT EXISTS NVIDIA_DATA
-        WAREHOUSE_SIZE = 'SMALL'
-        AUTO_SUSPEND = 60
-        AUTO_RESUME = TRUE;
-    """)
-
-    # Create Database (if it doesn't exist)
-    cur.execute("""
-        CREATE DATABASE IF NOT EXISTS NVIDIA_DB;
-    """)
-
     cur.execute("USE DATABASE NVIDIA_DB;")  # Specify the database
-
-    # Create Schema (if it doesn't exist)
-    cur.execute("""
-        CREATE SCHEMA IF NOT EXISTS NVIDIA_SCHEMA;
-    """)
-
     cur.execute("USE SCHEMA NVIDIA_DB.NVIDIA_SCHEMA;")  # Specify the schema
 
-    # Create Storage Integration
-    def create_storage_integration(cur):
-        cur.execute("""
-            CREATE STORAGE INTEGRATION IF NOT EXISTS nvidia_integration
-            TYPE = 'EXTERNAL_STAGE'
-            STORAGE_PROVIDER = 'S3'
-            ENABLED = TRUE
-            STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::699475925561:role/nvidia_db_snowflake_connection'
-            STORAGE_ALLOWED_LOCATIONS = ('s3://nvidia-agentic-assistant/');
-        """)
+    #print(agg_query)
+    columns = re.search(r"SELECT\s+(.*?)\s+FROM", query, re.IGNORECASE)
 
-    # Create CSV Format
-    def create_csv_format(cur):
-        cur.execute("""
-            CREATE OR REPLACE FILE FORMAT NVIDIA_CSV_FORMAT
-            TYPE = 'CSV'
-            FIELD_OPTIONALLY_ENCLOSED_BY = '"'
-            SKIP_HEADER = 1; -- Ensures the first row is treated as column headers
+    # Split the extracted column names by commas and strip whitespace
+    if columns:
+        column_names = [col.strip() for col in columns.group(1).split(",")]
+        print(column_names)
+    else:
+        print("No columns found.")
 
-        """)
+    cur.execute(query)
+    results = cur.fetchall()  # Fetch all rows
+    #print(results)
+    print(type(results))
+    df = pd.DataFrame(results, columns=column_names)
+    print(df)
+    return df
 
-    # Create Stage
-    def create_stage(cur):
-        cur.execute("""
-            CREATE STAGE IF NOT EXISTS NVIDIA_STAGE
-            URL = 's3://nvidia-agentic-assistant/csvFile/'
-            STORAGE_INTEGRATION = nvidia_integration
-            FILE_FORMAT = (FORMAT_NAME = 'NVIDIA_CSV_FORMAT');
-        """)
-
-    # Create Table by Inferring Schema
-    def create_table(cur):
-        cur.execute("""
-            CREATE OR REPLACE TABLE NVIDIA_TABLE (
-                Ticker STRING,
-                Date TIMESTAMP,
-                Open FLOAT,
-                High FLOAT,
-                Low FLOAT,
-                Close FLOAT,
-                Volume INT,
-                DailyChange FLOAT,
-                DailyChangePercent FLOAT,
-                DollarVolume FLOAT,
-                MA10 FLOAT,
-                MA30 FLOAT,
-                Volatility20D FLOAT,
-                RSI FLOAT
-            );
-        """)
-
-    # Load Data into Snowflake Table from Stage
-    def load_data_into_snowflake(cur):
-        cur.execute("""
-            COPY INTO NVIDIA_TABLE
-            FROM @NVIDIA_STAGE
-            FILES = ('nvidia_data.csv')
-            FILE_FORMAT = (FORMAT_NAME = 'NVIDIA_CSV_FORMAT')
-        """)
-
-    # Calling functions
-    create_storage_integration(cur)
-    create_csv_format(cur)
-    create_stage(cur)
-    create_table(cur)
-    load_data_into_snowflake(cur)
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
+def create_and_save_graph(df, filename='graph.png'):
+    # Ensure 'Date' column is properly formatted
+    print(type(df['DATE']))
+    df['Date'] = pd.to_datetime(df['DATE'])
+    print("HI")
+    # Set up the plot
+    plt.figure(figsize=(10, 6))
     
+    # Plot all numeric columns except 'Year' and 'Quarter'
+    numeric_columns = [col for col in df.columns if col not in ['DATE', 'Year', 'Quarter']]
+    print(numeric_columns)
+    # Plot each numeric column against 'Date'
+    for column in numeric_columns:
+        print(df['DATE'], df[column])
+        plt.plot(df['DATE'], df[column], label=column)
+    
+    # Add labels, title, and legend
+    plt.xlabel('Date')
+    plt.ylabel('Values')
+    plt.title('Dynamic Graph')
+    plt.legend()
+    plt.grid()
+    
+    # Save the graph as a PNG file
+    plt.savefig(filename)
+    print(f"Graph saved as {filename}")
 
 
-# Example usage
-if __name__ == "__main__":
-    df = create_daily_historical_report("NVDA", "5y")
-    print(len(df))
-    upload_csv_to_s3(df)
-    snowflake_connector()
+year_quarter_dict = {
+    "2024": ["1", "2", "3"],
+    "2023": ["2", "4"]
+}
+
+query = "What is the MA10 value for a specific stock (TICKER) on a given date?"
+
+input_string = fetch_snowflake_response(query,year_quarter_dict)
+print(input_string)
+
+queries = re.findall(r"(SELECT[\s\S]*?);", input_string)
+
+# Store the queries in variables
+agg_query = queries[0] if len(queries) > 0 else None
+raw_query = queries[1] if len(queries) > 1 else None
+
+# Print the extracted queries
+print("Aggregated Query:")
+print(agg_query)
+
+print("\nRaw Data Query:")
+print(raw_query)
+
+#fetch_snowflake_df(agg_query)
+dataframe = fetch_snowflake_df(raw_query)
+create_and_save_graph(dataframe)
