@@ -1,7 +1,6 @@
 import yfinance as yf
 from dotenv import load_dotenv
 from pathlib import Path
-from .. import s3_utils
 import numpy as np
 import io
 import snowflake.connector

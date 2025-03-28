@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from state import ResearchState
-from graph_functions import run_oracle, router, rag_search, web_search, generate_final_answer, snowflake_search
+from backend.graph_functions import run_oracle, router, rag_search, web_search, generate_final_answer, snowflake_search
 
 # Global variable to store the compiled graph
 _GLOBAL_GRAPH = None
