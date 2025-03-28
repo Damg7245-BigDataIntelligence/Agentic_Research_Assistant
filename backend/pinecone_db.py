@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 import google.generativeai as genai
-from backend.markdown_chunking import chunk_markdown_by_headers
+from markdown_chunking import chunk_markdown_by_headers
 import requests
 from urllib.parse import urlparse
 
