@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import uuid
 import io
 from datetime import datetime
-from backend.s3_utils import upload_visualization_to_s3
+from s3_utils import upload_visualization_to_s3
 import numpy as np
 import seaborn as sns
 from dotenv import load_dotenv
