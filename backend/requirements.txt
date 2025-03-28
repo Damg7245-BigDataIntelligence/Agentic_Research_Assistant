@@ -4,7 +4,6 @@ requests
 google-api-python-client
 tiktoken
 mistralai>=0.0.11
-pandas
 
 fastapi
 uvicorn
@@ -22,3 +21,5 @@ yfinance
 
 selenium
 webdriver-manager
+pyarrow<19.0.0
+snowflake-connector-python

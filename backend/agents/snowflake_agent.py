@@ -1,14 +1,12 @@
-import re
-import pandas as pd
 import yfinance as yf
-import snowflake.connector
 from dotenv import load_dotenv
-from snowflake.connector.pandas_tools import write_pandas
-import os
-import json
 from pathlib import Path
+from .. import s3_utils
 import numpy as np
+import io
+import snowflake.connector
 load_dotenv()
+import os
 
 def create_daily_historical_report(ticker="NVDA", period="5y", output_file=None):
     """
@@ -100,7 +98,7 @@ def create_daily_historical_report(ticker="NVDA", period="5y", output_file=None)
         print(f"📊 Report saved to: {output_file}")
         print(f"📈 Date range: {df['Date'].min()} to {df['Date'].max()}")
         
-        return str(output_file)
+        return df
         
     except Exception as e:
         print(f"❌ Error creating report: {str(e)}")
@@ -108,6 +106,136 @@ def create_daily_historical_report(ticker="NVDA", period="5y", output_file=None)
         traceback.print_exc()
         return None
 
+def upload_csv_to_s3(df):
+    # Convert DataFrame to CSV in memory (without index)
+    output_buffer = io.StringIO()
+    df.to_csv(output_buffer, index=False)
+    output_buffer.seek(0)  # Go to the beginning of the StringIO object
+
+    # Generate the filename with timestamp
+    filename = f"nvidia_data.csv"
+
+    # Upload the CSV to S3
+    s3_utils.upload_file_to_s3(output_buffer.getvalue(), filename, "csvFile")
+
+    print("File uploaded to s3")
+
+def snowflake_connector():
+    # Snowflake connection details
+    SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")  # e.g. 'vwcoqxf-qtb83828'
+    SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER")  # Your Snowflake username
+    SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")  # Your Snowflake password
+    SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE")  # Your role, e.g., 'SYSADMIN'
+
+    # Connecting to Snowflake
+    conn = snowflake.connector.connect(
+        user=SNOWFLAKE_USER,        # This should be your username
+        password=SNOWFLAKE_PASSWORD,       # This should be your password
+        account=SNOWFLAKE_ACCOUNT,     # This should be your Snowflake account URL
+        role=SNOWFLAKE_ROLE          # Optional, if you need to specify the role
+    )
+
+    cur = conn.cursor()
+    
+    # Create Warehouse (if it doesn't exist)
+    cur.execute("""
+        CREATE WAREHOUSE IF NOT EXISTS NVIDIA_DATA
+        WAREHOUSE_SIZE = 'SMALL'
+        AUTO_SUSPEND = 60
+        AUTO_RESUME = TRUE;
+    """)
+
+    # Create Database (if it doesn't exist)
+    cur.execute("""
+        CREATE DATABASE IF NOT EXISTS NVIDIA_DB;
+    """)
+
+    cur.execute("USE DATABASE NVIDIA_DB;")  # Specify the database
+
+    # Create Schema (if it doesn't exist)
+    cur.execute("""
+        CREATE SCHEMA IF NOT EXISTS NVIDIA_SCHEMA;
+    """)
+
+    cur.execute("USE SCHEMA NVIDIA_DB.NVIDIA_SCHEMA;")  # Specify the schema
+
+    # Create Storage Integration
+    def create_storage_integration(cur):
+        cur.execute("""
+            CREATE STORAGE INTEGRATION IF NOT EXISTS nvidia_integration
+            TYPE = 'EXTERNAL_STAGE'
+            STORAGE_PROVIDER = 'S3'
+            ENABLED = TRUE
+            STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::699475925561:role/nvidia_db_snowflake_connection'
+            STORAGE_ALLOWED_LOCATIONS = ('s3://nvidia-agentic-assistant/');
+        """)
+
+    # Create CSV Format
+    def create_csv_format(cur):
+        cur.execute("""
+            CREATE OR REPLACE FILE FORMAT NVIDIA_CSV_FORMAT
+            TYPE = 'CSV'
+            FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+            SKIP_HEADER = 1; -- Ensures the first row is treated as column headers
+
+        """)
+
+    # Create Stage
+    def create_stage(cur):
+        cur.execute("""
+            CREATE STAGE IF NOT EXISTS NVIDIA_STAGE
+            URL = 's3://nvidia-agentic-assistant/csvFile/'
+            STORAGE_INTEGRATION = nvidia_integration
+            FILE_FORMAT = (FORMAT_NAME = 'NVIDIA_CSV_FORMAT');
+        """)
+
+    # Create Table by Inferring Schema
+    def create_table(cur):
+        cur.execute("""
+            CREATE OR REPLACE TABLE NVIDIA_TABLE (
+                Ticker STRING,
+                Date TIMESTAMP,
+                Open FLOAT,
+                High FLOAT,
+                Low FLOAT,
+                Close FLOAT,
+                Volume INT,
+                DailyChange FLOAT,
+                DailyChangePercent FLOAT,
+                DollarVolume FLOAT,
+                MA10 FLOAT,
+                MA30 FLOAT,
+                Volatility20D FLOAT,
+                RSI FLOAT
+            );
+        """)
+
+    # Load Data into Snowflake Table from Stage
+    def load_data_into_snowflake(cur):
+        cur.execute("""
+            COPY INTO NVIDIA_TABLE
+            FROM @NVIDIA_STAGE
+            FILES = ('nvidia_data.csv')
+            FILE_FORMAT = (FORMAT_NAME = 'NVIDIA_CSV_FORMAT')
+        """)
+
+    # Calling functions
+    create_storage_integration(cur)
+    create_csv_format(cur)
+    create_stage(cur)
+    create_table(cur)
+    load_data_into_snowflake(cur)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    
+
+
 # Example usage
 if __name__ == "__main__":
-    create_daily_historical_report("NVDA", "5y")
+    df = create_daily_historical_report("NVDA", "5y")
+    print(len(df))
+    upload_csv_to_s3(df)
+    snowflake_connector()

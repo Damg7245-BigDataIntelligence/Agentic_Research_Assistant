@@ -11,8 +11,6 @@ aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_region = os.getenv('AWS_REGION')
 bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
 
-print(aws_region, bucket_name)
-
 # Initialize a session using AWS credentials
 s3_client = boto3.client(
     's3',
