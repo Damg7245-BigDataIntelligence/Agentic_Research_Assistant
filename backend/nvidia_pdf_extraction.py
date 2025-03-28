@@ -88,7 +88,7 @@ def fetch_nvidia_financial_reports():
         print("\nClosing WebDriver...")
         driver.quit()
 
-# # Example usage
-# reports = fetch_nvidia_financial_reports()
-# for report in reports:
-#     print(f"Fetched: {report['pdf_filename']} (Size: {len(report['content'])} bytes)")
+if __name__ == "__main__":
+    reports = fetch_nvidia_financial_reports()
+    for report in reports:
+        print(f"Fetched: {report['pdf_filename']} (Size: {len(report['content'])} bytes)")

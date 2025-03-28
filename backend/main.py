@@ -6,18 +6,10 @@ import os
 import json
 import time
 from typing import Dict, List
-from backend.pinecone_db import AgenticResearchAssistant
+from pinecone_db import AgenticResearchAssistant
+from research_graph import run_research_graph
+from s3_utils import setup_visualization_lifecycle_rule
 
-
-# # Import existing modules
-# from vector_storage_service import (
-#     store_in_pinecone,
-#     search_pinecone
-# )
-# from llm_service import generate_response_with_gemini  # Use only Gemini as per requirement
-# from agents.web_search_graph import run_web_search_workflow
-
-# Pass the lifespan to FastAPIfrom pydantic import BaseModel
 app = FastAPI()
 
 # Configure CORS
@@ -29,10 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-# PINECONE_ENV = os.getenv("PINECONE_ENVIRONMENT", "us-west1-gcp")
-
-# Request/Response models
 class QuestionRequest(BaseModel):
     question: str
     vector_db: str
@@ -53,32 +41,16 @@ class SearchRequest(BaseModel):
     query: str
     year_quarter_dict: Dict[str, List[str]]  # Accept string keys & string lists
 
+# New model for LangGraph research
+class ResearchRequest(BaseModel):
+    query: str
+    year_quarter_dict: Dict[str, List[str]]
+    mode: str = "combined"  # "pinecone", "web_search", or "combined"
+
 # API Endpoints
 @app.get("/")
 async def root():
     return {"message": "Nvidia Agentic Research Assistant"}
-
-@app.get("/health")
-async def health_check():
-    """Check the health of connected services"""
-    status = {
-        "api": "healthy",
-        "pinecone": "unknown",
-    }
-    
-    # # Check Pinecone
-    # if PINECONE_API_KEY:
-    #     try:
-    #         import pinecone
-    #         indexes = pinecone.list_indexes()
-    #         status["pinecone"] = "healthy"
-    #         status["indexes"] = indexes
-    #     except Exception as e:
-    #         status["pinecone"] = f"unhealthy: {str(e)}"
-    # else:
-    #     status["pinecone"] = "not configured"
-
-    # return status
 
 @app.get("/available_quarters", response_model=AvailableQuartersResponse)
 async def get_available_quarters():
@@ -91,59 +63,145 @@ async def get_available_quarters():
     
     return {"quarters": sorted(list(quarters))}
 
-# @app.post("/ask")
-# async def ask_question(request: QuestionRequest):
-#     """Answer a question using RAG with the specified vector DB and quarter filter"""
-#     try:
-#         start_time = time.time()
-    
-#         filter_dict = {}
-#         if request.quarter_filter and len(request.quarter_filter) > 0:
-#             filter_dict["quarter"] = {"$in": request.quarter_filter}
-#         if request.document_id:
-#             filter_dict["document_id"] = request.document_id
-                
-#         # Search Pinecone
-#         index_name = "nvidia-financials"
-#         context_chunks = search_pinecone(
-#             request.question,
-#             index_name=index_name,
-#             filter_dict=filter_dict if filter_dict else None,
-#             top_k=request.top_k
-#         )
-        
-#         # If no context chunks found, return an appropriate message
-#         if not context_chunks:
-#             return {
-#                 "answer": "I couldn't find any relevant information to answer your question. Please try a different question or adjust your filters.",
-#                 "context_chunks": [],
-#                 "processing_time": time.time() - start_time,
-#                 "token_info": None
-#             }
-        
-#         # Extract text from context chunks
-#         context_text = "\n\n".join([chunk["text"] for chunk in context_chunks])
-        
-#         # Generate answer with Gemini
-#         answer, token_info = generate_response_with_gemini(
-#             request.question,
-#             context_text,
-#             model_name="gemini-1.5-pro"  # Using Gemini as per your requirement
-#         )
-        
-#         return {
-#             "answer": answer,
-#             "context_chunks": context_chunks,
-#             "processing_time": time.time() - start_time,
-#             "token_info": token_info
-#         }
-    
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
-    
-    
 @app.post("/summarize_using_pinecone")
 def search(request: SearchRequest):
     assistant = AgenticResearchAssistant()
     response = assistant.search_pinecone_db(request.query, request.year_quarter_dict)
     return {"response": response}    
+
+@app.post("/web_search")
+async def web_search_endpoint(request: WebSearchRequest):
+    """Search the web for information about NVIDIA"""
+    try:
+        from backend.agents.web_search_agent import WebSearchAgent
+        agent = WebSearchAgent()
+        results = agent.search_news(request.query, request.num_results)
+        return {"status": "success", "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching web: {str(e)}")
+
+@app.post("/research")
+async def research_endpoint(request: ResearchRequest):
+    """
+    Run the LangGraph research workflow to get information.
+    """
+    try:
+        start_time = time.time()
+        
+        print(f"Research request received with mode: {request.mode}")
+        print(f"Query: {request.query}")
+        print(f"Year/quarter dict: {request.year_quarter_dict}")
+        
+        # Validate mode
+        valid_modes = ["pinecone", "web_search", "snowflake", "combined"]
+        if request.mode not in valid_modes:
+            return {"error": f"Invalid mode '{request.mode}'. Must be one of: {', '.join(valid_modes)}"}
+        
+        # Validate year_quarter_dict for pinecone, snowflake, and combined modes
+        if request.mode in ["pinecone", "snowflake", "combined"] and (not request.year_quarter_dict or not any(request.year_quarter_dict.values())):
+            return {"error": f"For {request.mode} search, at least one year and quarter must be selected"}
+        
+        try:
+            # Run the research workflow
+            result = run_research_graph(
+                query=request.query,
+                year_quarter_dict=request.year_quarter_dict,
+                mode=request.mode
+            )
+            
+            # Format the response
+            processing_time = time.time() - start_time
+            
+            return {
+                "result": result,
+                "processing_time": processing_time,
+                "mode": request.mode
+            }
+        except Exception as e:
+            import traceback
+            print(f"ERROR in run_research_graph: {e}")
+            traceback.print_exc()
+            raise
+            
+    except Exception as e:
+        import traceback
+        print(f"OUTER ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error running research workflow: {str(e)}")    
+
+@app.get("/pinecone_data_check")
+async def check_pinecone_data():
+    """
+    Check which years and quarters have data in Pinecone and return sample records
+    """
+    try:
+        assistant = AgenticResearchAssistant()
+        
+        # Get index statistics
+        stats = assistant.index.describe_index_stats()
+        total_vectors = stats.get("total_vector_count", 0)
+        
+        if total_vectors == 0:
+            return {
+                "status": "empty",
+                "message": "No data found in Pinecone index."
+            }
+        
+        # First, let's find what years and quarters are available
+        # We'll use a minimal vector to get diverse results (not focused on semantic similarity)
+        import numpy as np
+        dummy_vector = np.zeros(assistant.dimension).tolist()
+        
+        results = assistant.index.query(
+            vector=dummy_vector,
+            top_k=500,  # Request a large number to get diverse samples
+            include_metadata=True
+        )
+        
+        # Extract years and quarters from metadata
+        year_quarter_map = {}
+        
+        for match in results.get("matches", []):
+            metadata = match.get("metadata", {})
+            year = metadata.get("year", "unknown")
+            quarter = metadata.get("quarter", "unknown")
+            
+            # Initialize the year entry if it doesn't exist
+            if year not in year_quarter_map:
+                year_quarter_map[year] = {}
+            
+            # Initialize the quarter entry if it doesn't exist
+            if quarter not in year_quarter_map[year]:
+                year_quarter_map[year][quarter] = []
+            
+            # Only keep up to 3 samples per quarter
+            if len(year_quarter_map[year][quarter]) < 3:
+                year_quarter_map[year][quarter].append({
+                    "id": match.get("id", "unknown"),
+                    "score": match.get("score", 0),
+                    "header": metadata.get("header", "No header"),
+                    "text_preview": metadata.get("text", "")[:200] + "..." if metadata.get("text") else "No text"
+                })
+        
+        # Format the results for readability
+        formatted_results = {
+            "status": "success",
+            "total_vectors": total_vectors,
+            "years_available": sorted(list(year_quarter_map.keys())),
+            "data": {}
+        }
+        
+        # Build a structured response with year/quarter hierarchy
+        for year in sorted(year_quarter_map.keys()):
+            formatted_results["data"][year] = {}
+            
+            for quarter in sorted(year_quarter_map[year].keys()):
+                formatted_results["data"][year][quarter] = year_quarter_map[year][quarter]
+        
+        return formatted_results
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error checking Pinecone data: {str(e)}"
+        }    

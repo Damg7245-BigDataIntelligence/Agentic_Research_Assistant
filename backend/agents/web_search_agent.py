@@ -1,11 +1,8 @@
 from typing import Dict, List, Any
-from langchain_core.agents import AgentAction, AgentFinish
-from langchain_core.messages import BaseMessage, FunctionMessage
 from serpapi import GoogleSearch
 import os
 from dotenv import load_dotenv
 from datetime import datetime
-import json
 from llm_service import generate_response_with_gemini  # Add this import
 
 # Load environment variables
@@ -151,13 +148,14 @@ class WebSearchAgent:
         {trends_context}
         """
 
+        print("web search context: ", context)
         # Use the new response_type parameter
         analysis, token_info = generate_response_with_gemini(
             query="Analyze NVIDIA updates",
             context=context,
             response_type="web_analysis"
         )
-        
+        print("web search analysis: ", analysis)
         return analysis, token_info  # Now also returning token info for tracking
 
     def run(self, query: str) -> Dict[str, Any]:
@@ -168,7 +166,8 @@ class WebSearchAgent:
             # Perform searches
             news_results = self.search_news(query)
             trend_results = self.search_trends(query)
-            
+            print("news_results: ", news_results)
+            print("trend_results: ", trend_results)
             # Generate basic summary
             summary = self.process_results(news_results, trend_results)
             

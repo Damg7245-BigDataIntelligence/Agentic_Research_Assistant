@@ -11,6 +11,7 @@ boto3
 
 langgraph
 langchain
+langchain-google-genai
 serpapi
 google-search-results
 litellm
@@ -18,9 +19,11 @@ google-generativeai
 pinecone[grpc]
 sentence_transformers
 yfinance
+snowflake-connector-python
 
 selenium
 webdriver-manager
 pyarrow<19.0.0
 snowflake-connector-python
 matplotlib
+seaborn

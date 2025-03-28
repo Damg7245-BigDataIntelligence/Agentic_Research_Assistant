@@ -4,9 +4,11 @@ from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 import google.generativeai as genai
-from backend.markdown_chunking import chunk_markdown_by_headers
+from markdown_chunking import chunk_markdown_by_headers
 import requests
 from urllib.parse import urlparse
+
+load_dotenv()
 
 def extract_filename_year_quarter(url: str):
     """
@@ -46,11 +48,10 @@ class AgenticResearchAssistant:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
         
         # Load environment variables
-        dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
-        load_dotenv(dotenv_path)
         self.PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
         self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
         
+        print(f"PINECONE_API_KEY: {self.PINECONE_API_KEY}")
         # Initialize Pinecone
         self.pc = Pinecone(api_key=self.PINECONE_API_KEY)
         self.index_name = "nvidia-agentic-research-assistant"
@@ -58,7 +59,8 @@ class AgenticResearchAssistant:
         
         # Configure Gemini API
         genai.configure(api_key=self.GOOGLE_API_KEY)
-        self.gemini_model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        print(f"GOOGLE_API_KEY: {self.GOOGLE_API_KEY}")
+        self.gemini_model = genai.GenerativeModel("gemini-1.5-pro")
         
         # Check and create Pinecone index if it doesn’t exist
         if self.index_name not in [index["name"] for index in self.pc.list_indexes()]:
@@ -161,7 +163,7 @@ class AgenticResearchAssistant:
 
             # Extract matched texts along with their metadata
             retrieved_data = [(match["metadata"]["text"], match["metadata"]["year"], match["metadata"]["quarter"]) for match in matches]
-            # print(retrieved_data)
+            print("retrieved_data: ", retrieved_data)
             
             # Create context for Gemini
             context = "\n".join([f"Year: {year}, Quarter: {quarter} - {text}" for text, year, quarter in retrieved_data])
@@ -174,6 +176,7 @@ class AgenticResearchAssistant:
 
             # Generate response using Gemini
             response = self.gemini_model.generate_content(prompt)
+            print("pineceone output: ", response.text)
             return response.text
         except Exception as e:
             logging.error(f"Error during search: {e}")
