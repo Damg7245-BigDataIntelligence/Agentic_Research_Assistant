@@ -1,7 +1,7 @@
-from nvidia_pdf_extraction import fetch_nvidia_financial_reports
-from s3_utils import fetch_s3_urls, get_presigned_url, upload_to_s3
-from mistral_ocr_markdown import extract_text_from_pdf
-from pinecone_db import extract_filename_year_quarter, AgenticResearchAssistant
+from backend.nvidia_pdf_extraction import fetch_nvidia_financial_reports
+from backend.s3_utils import fetch_s3_urls, get_presigned_url, upload_to_s3
+from backend.mistral_ocr_markdown import extract_text_from_pdf
+from backend.pinecone_db import extract_filename_year_quarter, AgenticResearchAssistant
 import time
 
 def fetch_pdf_s3_upload():

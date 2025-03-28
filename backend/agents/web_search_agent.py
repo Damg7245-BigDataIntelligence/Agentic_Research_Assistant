@@ -3,7 +3,7 @@ from serpapi import GoogleSearch
 import os
 from dotenv import load_dotenv
 from datetime import datetime
-from llm_service import generate_response_with_gemini  # Add this import
+from backend.llm_service import generate_response_with_gemini  # Add this import
 
 # Load environment variables
 load_dotenv()

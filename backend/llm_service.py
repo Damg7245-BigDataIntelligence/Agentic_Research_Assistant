@@ -1,8 +1,9 @@
 import os
-from typing import Dict, Any, Tuple, Optional
-import litellm
 import tiktoken
 from google.generativeai import configure, GenerativeModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def generate_response_with_gemini(query, context=None, model_name="gemini-1.5-pro", response_type="default"):
     """

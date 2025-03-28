@@ -2,13 +2,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-import os
-import json
 import time
 from typing import Dict, List
-from pinecone_db import AgenticResearchAssistant
-from research_graph import run_research_graph
-from s3_utils import setup_visualization_lifecycle_rule
+from backend.pinecone_db import AgenticResearchAssistant
+from backend.graph_functions import run_research_graph
 
 app = FastAPI()
 

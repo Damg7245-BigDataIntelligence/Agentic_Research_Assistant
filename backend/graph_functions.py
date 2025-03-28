@@ -3,9 +3,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from state import AgentAction
 import os
 from dotenv import load_dotenv
-from pinecone_db import AgenticResearchAssistant
-from agents.web_search_agent import WebSearchAgent
-from agents.snowflake_agent import generate_snowflake_insights
+from backend.pinecone_db import AgenticResearchAssistant
+from backend.agents.web_search_agent import WebSearchAgent
+from backend.agents.snowflake_agent import generate_snowflake_insights
 import re
 load_dotenv()
 # Initialize the LLM

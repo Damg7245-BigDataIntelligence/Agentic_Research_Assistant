@@ -1,11 +1,10 @@
 import streamlit as st
-import os
 import requests
 from datetime import datetime
 import re
 
 # Constants
-FASTAPI_URL = "http://127.0.0.1:8000/"  # FastAPI base URL
+FASTAPI_URL = "http://34.85.173.233:8000/"  # FastAPI base URL
 
 def configure_page():
     """Sets up the Streamlit page configuration."""

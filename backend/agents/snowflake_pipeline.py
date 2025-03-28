@@ -5,8 +5,9 @@ from .. import s3_utils
 import numpy as np
 import io
 import snowflake.connector
-load_dotenv()
 import os
+
+load_dotenv()
 
 def create_daily_historical_report(ticker="NVDA", period="5y", output_file=None):
     """
