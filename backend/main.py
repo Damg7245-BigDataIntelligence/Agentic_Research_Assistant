@@ -1,13 +1,31 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import time
 from typing import Dict, List
-from backend.pinecone_db import AgenticResearchAssistant
-from backend.graph_functions import run_research_graph
+from pinecone_db import AgenticResearchAssistant
+from research_graph import initialize_research_graph, run_research_graph
 
-app = FastAPI()
+# Define lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize the research graph
+    try:
+        initialize_research_graph()
+        print("Research graph initialized during server startup")
+    except Exception as e:
+        print(f"Error initializing research graph: {e}")
+        raise e
+    
+    yield  # Server is running
+    
+    # Cleanup (if needed)
+    print("Shutting down research graph...")
+
+# Initialize FastAPI with lifespan
+app = FastAPI(lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
@@ -70,7 +88,7 @@ def search(request: SearchRequest):
 async def web_search_endpoint(request: WebSearchRequest):
     """Search the web for information about NVIDIA"""
     try:
-        from backend.agents.web_search_agent import WebSearchAgent
+        from agents.web_search_agent import WebSearchAgent
         agent = WebSearchAgent()
         results = agent.search_news(request.query, request.num_results)
         return {"status": "success", "results": results}
